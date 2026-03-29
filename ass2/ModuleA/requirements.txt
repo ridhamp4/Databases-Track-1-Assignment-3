@@ -1,0 +1,7 @@
+graphviz
+matplotlib
+jupyter
+numpy
+pandas
+Flask
+Flask-Cors
