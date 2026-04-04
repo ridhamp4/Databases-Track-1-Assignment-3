@@ -42,11 +42,11 @@
         }
       },
       "likes": {
-        "fail": 5,
-        "ok": 995,
+        "fail": 15,
+        "ok": 985,
         "status_counts": {
-          "200": 995,
-          "500": 5
+          "200": 985,
+          "500": 15
         }
       },
       "votes": {
@@ -59,7 +59,7 @@
     }
   },
   "failureSimulation": {
-    "error_message": "1146 (42S02): Table 'iitgn_connect.definitelymissingtable' doesn't exist",
+    "error_message": "1146 (42S02): Table 'iitgn_connect.DefinitelyMissingTable' doesn't exist",
     "forced_errors_seen": 1000,
     "iterations": 1000,
     "name": "failure_simulation",
@@ -67,12 +67,12 @@
     "success": true,
     "unexpected_successes": 0
   },
-  "generatedAt": "2026-04-04T10:21:23.324278+00:00",
+  "generatedAt": "2026-04-04T19:18:28.195242+00:00",
   "raceConditionProbes": {
     "actor": "parthiv_p",
     "artifacts": {
-      "race_group_id": 19,
-      "race_poll_id": 18
+      "race_group_id": 16,
+      "race_poll_id": 14
     },
     "attempts": 1000,
     "concurrency": 128,
@@ -98,11 +98,11 @@
         }
       },
       "likes": {
-        "fail": 11,
-        "ok": 989,
+        "fail": 8,
+        "ok": 992,
         "status_counts": {
-          "200": 989,
-          "500": 11
+          "200": 992,
+          "500": 8
         }
       },
       "votes": {
@@ -115,10 +115,10 @@
     }
   },
   "sharedArtifacts": {
-    "group_id": 18,
-    "poll_id": 17,
-    "poll_option_id": 38,
-    "post_id": 2033
+    "group_id": 15,
+    "poll_id": 13,
+    "poll_option_id": 30,
+    "post_id": 4031
   },
   "stressTest": {
     "concurrency": 64,
@@ -128,11 +128,11 @@
       "200": 1000
     },
     "timings_ms": {
-      "average": 512.0883793399771,
-      "max": 1648.3484999989741,
-      "min": 41.26091699436074,
-      "p50": 229.99056250046124,
-      "p95": 1496.528895845404
+      "average": 1367.5544826468977,
+      "max": 2922.1277439937694,
+      "min": 80.41240098827984,
+      "p50": 968.4504210090381,
+      "p95": 2588.353270101652
     }
   },
   "users": [

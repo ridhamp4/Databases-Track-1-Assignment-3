@@ -26,13 +26,13 @@
     "committed": 3600,
     "rolled_back": 8400,
     "rollback_reasons": {
+      "Injected failure after orders insert": 399,
       "Injected failure after users update": 418,
       "Injected failure after products update": 387,
-      "Injected failure after orders insert": 399,
       "Out of stock": 7196
     },
-    "elapsed_sec": 2.9385,
-    "throughput_tps": 4083.7
+    "elapsed_sec": 143.4383,
+    "throughput_tps": 83.66
   },
   "consistency": {
     "ok": true,
