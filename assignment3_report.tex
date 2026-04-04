@@ -1,0 +1,560 @@
+\documentclass[12pt,a4paper]{article}
+
+% --- Packages ---
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{tabularx}
+
+% --- Colors ---
+\definecolor{codeblue}{rgb}{0.16,0.32,0.75}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codegreen}{rgb}{0.0,0.5,0.0}
+\definecolor{codebg}{rgb}{0.97,0.97,0.97}
+\definecolor{iitgnblue}{rgb}{0.12,0.29,0.53}
+
+% --- Listings style ---
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  keywordstyle=\color{codeblue}\bfseries,
+  commentstyle=\color{codegreen},
+  stringstyle=\color{red!70!black},
+  numbers=left,
+  numberstyle=\tiny\color{codegray},
+  numbersep=8pt,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{codegray!40},
+  tabsize=4,
+  showstringspaces=false,
+  captionpos=b,
+}
+
+\lstdefinestyle{python}{language=Python, morekeywords={self,True,False,None,as,with}}
+
+% --- Header/Footer ---
+\setlength{\headheight}{14.5pt}
+\addtolength{\topmargin}{-2.5pt}
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{CS 432: Databases}
+\lhead{Assignment 3 Report}
+\cfoot{\thepage}
+
+% --- Title formatting ---
+\titleformat{\section}{\Large\bfseries\color{iitgnblue}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\large\bfseries\color{iitgnblue!80}}{}{0em}{}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=iitgnblue,
+  urlcolor=codeblue,
+  citecolor=codeblue,
+}
+
+% =====================================================================
+\begin{document}
+
+% --- Title Page ---
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Huge\bfseries Assignment 3\par}
+\vspace{0.5cm}
+{\Large Transaction Management, Recovery, and High-Concurrency Validation\par}
+\vspace{1.5cm}
+{\large\textbf{CS 432: Databases}\par}
+{\large Semester II, 2025--2026\par}
+\vspace{1cm}
+{\large Indian Institute of Technology, Gandhinagar\par}
+\vspace{2cm}
+
+\begin{tabular}{lll}
+\hline
+\textbf{Team Members} & \textbf{Module} & \textbf{Role} \\
+\hline
+Parthiv Patel & A & Transaction engine + recovery integration \\
+Laksh Jain & A & B+ tree DB internals + API integration \\
+Shriniket Behera & A & Constraints + isolation + ACID validation \\
+Ridham Patel & B & Stress harness design + reporting pipeline \\
+Rudra Pratap Singh & B & Concurrency/race/failure test implementation \\
+\hline
+\end{tabular}
+
+\vspace{1.5cm}
+{\large\textbf{Repository:} \url{https://github.com/ridhamp4/Databases-Track-1-Assignment-3}\par}
+\vspace{0.8cm}
+\begin{tabular}{ll}
+\hline
+\textbf{Module} & \textbf{Artifact} \\
+\hline
+Module A & \texttt{ModuleA/} implementation + ACID tests \\
+Module B & \texttt{ModuleB/stress\_tests/module\_b\_on\_module\_a.py} \\
+\hline
+\end{tabular}
+
+\vfill
+\begin{center}
+\fbox{\parbox{0.9\textwidth}{\centering\small
+\textbf{Primary Result File:} \texttt{ModuleB/stress\_tests/module\_b\_on\_module\_a\_results.json} \\
+\textbf{Large-volume run used in this report:} workers=24, tx-per-worker=500, race-attempts=2000, fail-probability=0.25
+}}
+\end{center}
+\vspace{1cm}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% #####################################################################
+%                        AIM / PRINCIPLE / PS
+% #####################################################################
+\section{Aim, Principle, and Problem Statement}
+
+\subsection{Aim}
+The objective is to make a B+ tree based mini database robust under both normal and high-contention workloads by combining reliable transaction semantics with stress validation.
+
+\subsection{Principle}
+The system is designed around ACID properties:
+\begin{itemize}[noitemsep]
+  \item \textbf{Atomicity}: all-or-nothing multi-step transactions.
+  \item \textbf{Consistency}: constraints and invariants are preserved.
+  \item \textbf{Isolation}: concurrent operations do not expose corrupted intermediate state.
+  \item \textbf{Durability}: committed state survives restart via WAL replay.
+\end{itemize}
+
+\subsection{Problem Statement (PS)}
+We must validate that a custom B+ tree database engine supports correct multi-relation transactional behavior, recovery after failure, and safe performance under heavy concurrent operations.
+
+\begin{lstlisting}[style=python, caption={Minimal three-table transactional scenario targeted by Assignment 3}]
+tx_id = dbm.begin()
+users.update(user_id, updated_user, tx_id=tx_id)
+products.update(product_id, updated_product, tx_id=tx_id)
+orders.insert(new_order, tx_id=tx_id)
+dbm.commit(tx_id)
+\end{lstlisting}
+
+% #####################################################################
+%                        BROAD PLAN
+% #####################################################################
+\section{Broad Plan}
+
+\begin{enumerate}[noitemsep]
+  \item Strengthen Module A with transaction management, WAL-based recovery, constraints, and isolation mechanisms.
+  \item Build Module B harnesses to generate concurrent workloads, race conditions, failure injection, and stress traffic.
+  \item Evaluate with deterministic checks and summarize ACID outcomes from measured runs.
+\end{enumerate}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, caption={Execution plan used in practice}]
+# Module A validation
+cd ModuleA
+python test/Atomicity.py --mode crash
+python test/Atomicity.py --mode verify
+
+# Module B API-level stress (original)
+cd ../ModuleB
+python stress_tests/module_b_stress.py --base-url http://localhost:5001
+
+# Module B engine-level stress over Module A
+python stress_tests/module_b_on_module_a.py
+\end{lstlisting}
+
+% #####################################################################
+%                        MODULE A
+% #####################################################################
+\part*{Module A: Transaction Engine and Recovery over B+ Tree}
+\addcontentsline{toc}{part}{Module A: Transaction Engine and Recovery over B+ Tree}
+
+\section{Implementation Details (Module A)}
+
+\subsection{Engine Architecture}
+Each relation is stored as a dedicated B+ tree. All mutations occur directly on table B+ trees through table abstractions managed by \texttt{DatabaseManager}.
+
+Core files:
+\begin{itemize}[noitemsep]
+  \item \texttt{ModuleA/database/bplustree.py}
+  \item \texttt{ModuleA/database/table.py}
+  \item \texttt{ModuleA/database/transaction.py}
+  \item \texttt{ModuleA/database/db\_manager.py}
+  \item \texttt{ModuleA/routes.py}
+\end{itemize}
+
+\subsection{Transaction and WAL Workflow}
+\begin{enumerate}[noitemsep]
+  \item \textbf{BEGIN}: create tx state, acquire isolation lock, append \texttt{TX\_START}.
+  \item \textbf{DML}: log operation with old/new image before applying mutation.
+  \item \textbf{COMMIT}: append \texttt{TX\_COMMIT} and release lock.
+  \item \textbf{ROLLBACK}: undo ops in reverse order, append \texttt{TX\_ROLLBACK}.
+\end{enumerate}
+
+\begin{lstlisting}[style=python, caption={WAL logging in transaction manager (Module A)}]
+def log_op(self, tx_id, op_type, db_name, table_name, key, old_value, new_value):
+    tx = self.ensure_active(tx_id)
+    entry = {
+        "type": op_type,
+        "tx_id": tx_id,
+        "db": db_name,
+        "table": table_name,
+        "key": key,
+        "old": old_value,
+        "new": new_value,
+    }
+    self._append_log(entry)
+    tx.ops.append(entry)
+\end{lstlisting}
+
+\subsection{Constraints and Consistency Guards}
+Database-layer validation enforces:
+\begin{itemize}[noitemsep]
+  \item non-negative numeric fields (e.g., \texttt{balance}, \texttt{stock}, \texttt{amount}),
+  \item primary key integrity,
+  \item foreign-key-style reference checks across tables.
+\end{itemize}
+
+\subsection{Recovery Logic}
+Restart recovery parses WAL and partitions transactions into \texttt{started}, \texttt{committed}, and \texttt{rolled\_back}. Recovery then applies:
+\[
+\text{incomplete} = \text{started} - \text{committed} - \text{rolled\_back}
+\]
+\begin{itemize}[noitemsep]
+  \item REDO all committed operations in log order.
+  \item UNDO only incomplete operations in reverse order.
+\end{itemize}
+
+\begin{lstlisting}[style=python, caption={Durability fix: UNDO only incomplete transactions}]
+incomplete = started - committed - rolled_back
+redo_ops = [op for op in ops if op.get("tx_id") in committed]
+undo_ops = [
+    op for op in reversed(ops)
+    if op.get("tx_id") in incomplete
+]
+db_manager.apply_recovery_ops(redo_ops, undo_ops)
+\end{lstlisting}
+
+This avoids double-undo of already rolled-back transactions and was required to make durability pass under large rollback-heavy stress.
+
+\section{Module A Results}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\hline
+\textbf{Property} & \textbf{Result} \\
+\hline
+Atomicity & PASS (rollback after injected failure) \\
+Consistency & PASS (constraint violations rejected) \\
+Isolation & PASS (serializable behavior under shared data contention) \\
+Durability & PASS (committed state preserved after restart) \\
+Multi-relation transaction demo & PASS (Users, Products, Orders updated atomically) \\
+\hline
+\end{tabularx}
+\caption{Module A validation summary}
+\end{table}
+
+\begin{lstlisting}[style=python, caption={Example ACID check output pattern from Module A tests}]
+Atomicity: PASS
+Consistency: PASS
+Isolation: PASS
+Durability: PASS
+\end{lstlisting}
+
+% #####################################################################
+%                        MODULE B
+% #####################################################################
+\newpage
+\part*{Module B: Concurrent Workload and Stress Testing (Dual Validation Paths)}
+\addcontentsline{toc}{part}{Module B: Concurrent Workload and Stress Testing (Dual Validation Paths)}
+
+\section{Implementation Details (Module B)}
+
+\subsection{Path A: Original Assignment2 Flask Backend Stress (module\_b\_stress.py)}
+The original Module B implementation directly stress-tests the Assignment2 Flask backend service (running at \texttt{http://localhost:5001}) and validates multi-user behavior at API level.
+
+Primary script:
+\begin{lstlisting}[basicstyle=\ttfamily\small]
+ModuleB/stress_tests/module_b_stress.py
+\end{lstlisting}
+
+Backend run + stress run flow:
+\begin{lstlisting}[basicstyle=\ttfamily\small, caption={Original Module B backend stress execution flow}]
+# Terminal 1: start Assignment2 Flask backend
+cd ModuleB/Assignment2/app/backend
+python app.py
+
+# Terminal 2: run original Module B stress harness
+cd ModuleB
+python stress_tests/module_b_stress.py --base-url http://localhost:5001
+\end{lstlisting}
+
+Representative API areas covered by this original harness:
+\begin{itemize}[noitemsep]
+  \item auth login and token-based session flow,
+  \item post creation, likes, comments,
+  \item poll creation and concurrent voting,
+  \item group join race probes,
+  \item transaction failure simulation in backend DB path,
+  \item read-heavy stress throughput and latency summary.
+\end{itemize}
+
+Representative workload pattern from the original harness:
+\begin{lstlisting}[style=python, caption={Concurrent API writes in module\_b\_stress.py (representative)}]
+with ThreadPoolExecutor(max_workers=concurrency) as executor:
+  like_results = list(executor.map(
+    lambda session: http_json_request_with_retry(
+      base_url,
+      "POST",
+      f"/api/posts/{shared['post_id']}/like",
+      None,
+      session.token,
+    ),
+    like_inputs,
+  ))
+\end{lstlisting}
+
+The same script also validates rollback behavior through forced SQL errors:
+\begin{lstlisting}[style=python, caption={Failure simulation logic in module\_b\_stress.py (representative)}]
+for _ in range(iterations):
+    try:
+        # deliberate missing-table query to trigger DB error
+        cursor.execute("INSERT INTO definitelymissingtable VALUES (1)")
+    except Exception:
+        conn.rollback()
+\end{lstlisting}
+
+Original reported outcomes (from Module B README):
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\hline
+\textbf{Original Test Track} & \textbf{Observed Result} \\
+\hline
+Concurrent Usage & PASS \\
+Race Condition Testing & PASS \\
+Failure Simulation & PASS \\
+Stress Testing & PASS \\
+Locust Run (100 users, 20s) & 2734 requests, 0 failures, avg 386 ms, P95 750 ms \\
+\hline
+\end{tabularx}
+\caption{Original Module B API-level testing summary}
+\end{table}
+
+Measured snapshot from \texttt{module\_b\_results.json} (Assignment2 backend run):
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\hline
+\textbf{Metric from Original Harness Output} & \textbf{Observed Value} \\
+\hline
+Concurrent usage comments (DB count) & 1000 \\
+Concurrent usage votes (DB count) & 6 \\
+Failure simulation forced errors seen & 1000 \\
+Failure simulation rollback row count & 0 (rollback successful) \\
+Stress test requests & 1000 \\
+Stress test average latency & 512.09 ms \\
+Stress test P95 latency & 1496.53 ms \\
+\hline
+\end{tabularx}
+\caption{Concrete values from \texttt{ModuleB/stress\_tests/module\_b\_results.json}}
+\end{table}
+
+\subsection{Path B: Engine-Level Stress over Module A (module\_b\_on\_module\_a.py)}
+A dedicated engine-level harness is implemented at:
+\begin{lstlisting}[basicstyle=\ttfamily\small]
+ModuleB/stress_tests/module_b_on_module_a.py
+\end{lstlisting}
+
+The harness executes:
+\begin{itemize}[noitemsep]
+  \item concurrent three-table transactions,
+  \item race-condition probes on a shared limited-stock record,
+  \item fault injection at multiple transaction points,
+  \item restart durability verification using pre/post summaries.
+\end{itemize}
+
+\begin{lstlisting}[style=python, caption={Engine-level worker loop from module\_b\_on\_module\_a.py (representative)}]
+for _ in range(tx_per_worker):
+    user_id = random.randint(1, user_count)
+    product_id = random.randint(1, product_count)
+    ok, reason = place_order_tx(
+        dbm, db_name, order_ids,
+        user_id=user_id,
+        product_id=product_id,
+        inject_failure=failure_point,
+    )
+\end{lstlisting}
+
+\subsection{Measured Invariants}
+\begin{itemize}[noitemsep]
+  \item No negative balances or stock values.
+  \item Sum(order amount) matches total balance drop.
+  \item Order count matches total stock drop.
+  \item Race transactions do not oversell stock.
+\end{itemize}
+
+\begin{lstlisting}[style=python, caption={Invariant checks from engine-level harness}]
+spent = sum(o["amount"] for o in orders)
+balance_drop = initial_balance_total - sum(u["balance"] for u in users)
+stock_drop = initial_stock_total - sum(p["stock"] for p in products)
+
+assert spent == balance_drop
+assert stock_drop == len(state["orders"])
+assert all(u["balance"] >= 0 for u in users)
+assert all(p["stock"] >= 0 for p in products)
+\end{lstlisting}
+
+\section{Large-Volume Run Results}
+Configuration used:
+\begin{itemize}[noitemsep]
+  \item workers = 24
+  \item tx-per-worker = 500
+  \item race-attempts = 2000
+  \item fail-probability = 0.25
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{l>{\raggedleft\arraybackslash}X}
+\hline
+\textbf{Metric} & \textbf{Value} \\
+\hline
+Attempted transactions & 12000 \\
+Committed transactions & 3600 \\
+Rolled back transactions & 8400 \\
+Elapsed time (s) & 2.9385 \\
+Throughput (tx/s) & 4083.7 \\
+Race attempts & 2000 \\
+Race committed & 40 \\
+Race final stock & 0 \\
+\hline
+\end{tabularx}
+\caption{Module B large-volume metrics over Module A}
+\end{table}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, caption={Large-volume run command used for this report}]
+python stress_tests/module_b_on_module_a.py \
+  --workers 24 \
+  --tx-per-worker 500 \
+  --race-attempts 2000 \
+  --fail-probability 0.25
+\end{lstlisting}
+
+Rollback reason distribution:
+\begin{itemize}[noitemsep]
+  \item Injected failure after users update: 418
+  \item Injected failure after products update: 387
+  \item Injected failure after orders insert: 399
+  \item Out of stock: 7196
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\hline
+\textbf{ACID Property} & \textbf{Status} \\
+\hline
+Atomicity & TRUE \\
+Consistency & TRUE \\
+Isolation & TRUE \\
+Durability & TRUE \\
+\hline
+\end{tabular}
+\caption{ACID summary from \texttt{module\_b\_on\_module\_a\_results.json}}
+\end{table}
+
+\begin{lstlisting}[style=python, caption={Report fragment generated by harness (JSON shape)}]
+"acid_summary": {
+  "atomicity": true,
+  "consistency": true,
+  "isolation": true,
+  "durability": true
+}
+\end{lstlisting}
+
+% #####################################################################
+%                        INTERPRETATION
+% #####################################################################
+\section{Result Interpretation}
+
+\subsection{Module A Interpretation}
+The WAL old/new image model with ordered redo and reverse undo gives deterministic state reconstruction. The corrected incomplete-transaction filter improves durability reliability when workloads have frequent rollback events.
+
+\begin{lstlisting}[style=python, caption={Interpretation anchor: recovery partitioning logic}]
+incomplete = started - committed - rolled_back
+# only incomplete txns are undone during restart
+\end{lstlisting}
+
+\subsection{Module B Interpretation}
+High rollback volume is expected in this profile due to intentional failure injection and finite stock exhaustion, not corruption. The race test shows correct isolation behavior (no oversell). The durability pass confirms committed state survives restart under heavy concurrency.
+
+\begin{lstlisting}[style=python, caption={Interpretation anchor: race validation condition}]
+valid = committed <= race_stock \
+  and final_stock >= 0 \
+  and (race_stock - final_stock) == committed
+\end{lstlisting}
+
+\subsection{End-to-End Interpretation}
+Together, Module A and Module B demonstrate a robust pipeline: transactional correctness at engine level and behaviorally safe execution under concurrent, adversarial, and large-volume stress workloads.
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, caption={Two complementary Module B tracks}]
+1) module_b_stress.py          -> API-level multi-user behavior (Assignment2 backend)
+2) module_b_on_module_a.py     -> engine-level stress directly over ModuleA core
+\end{lstlisting}
+
+% #####################################################################
+%                        REPRODUCIBILITY
+% #####################################################################
+\section{Reproducibility}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small]
+cd ModuleB
+python stress_tests/module_b_on_module_a.py
+
+# Large-volume profile used in this report
+python stress_tests/module_b_on_module_a.py \
+  --workers 24 \
+  --tx-per-worker 500 \
+  --race-attempts 2000 \
+  --fail-probability 0.25
+\end{lstlisting}
+
+Primary output file:
+\begin{itemize}[noitemsep]
+  \item \texttt{ModuleB/stress\_tests/module\_b\_on\_module\_a\_results.json}
+\end{itemize}
+
+% #####################################################################
+%                        TEAM CONTRIBUTIONS
+% #####################################################################
+\section*{Team Member Contributions}
+\addcontentsline{toc}{section}{Team Member Contributions}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\hline
+\textbf{Member} & \textbf{Contributions} \\
+\hline
+Parthiv Patel & Module A: transaction workflow integration, route-level transaction APIs, and ACID validation support \\
+Laksh Jain & Module A: B+ tree database internals, table/database abstractions, and recovery integration \\
+Shriniket Behera & Module A: consistency constraints, isolation controls, and durability/recovery fixes \\
+Ridham Patel & Module B: stress harness orchestration, report generation pipeline, and run automation \\
+Rudra Pratap Singh & Module B: concurrent/race/failure workload implementation and large-volume execution validation \\
+\hline
+\end{tabularx}
+\end{table}
+
+\end{document}
