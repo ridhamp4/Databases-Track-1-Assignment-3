@@ -12,12 +12,12 @@ class TxState:
 
 
 class TransactionManager:
-    def __init__(self, log_path, db_manager=None):
+    def __init__(self, log_path, db_manager=None, isolation_lock=None):
         self.log_path = log_path
         self._db_manager = db_manager
         self._tx_lock = threading.Lock()
         self._log_lock = threading.Lock()
-        self._global_lock = threading.RLock()
+        self._global_lock = isolation_lock or threading.RLock()
         self._next_tx_id = 0
         self._active = {}
         self._ensure_log_dir()
@@ -111,14 +111,16 @@ class TransactionManager:
                 elif entry_type in ("TX_INSERT", "TX_UPDATE", "TX_DELETE"):
                     ops.append(payload)
 
-        redo_ops = [op for op in ops if op.get("tx_id") in committed]
-        undo_ops = [
-            op
-            for op in reversed(ops)
-            if op.get("tx_id") in started and op.get("tx_id") not in committed
-        ]
-
-        db_manager.apply_recovery_ops(redo_ops, undo_ops)
+        if hasattr(db_manager, "apply_recovery_from_log"):
+            db_manager.apply_recovery_from_log(ops, started, committed)
+        else:
+            redo_ops = [op for op in ops if op.get("tx_id") in committed]
+            undo_ops = [
+                op
+                for op in reversed(ops)
+                if op.get("tx_id") in started and op.get("tx_id") not in committed
+            ]
+            db_manager.apply_recovery_ops(redo_ops, undo_ops)
 
     def _append_log(self, entry):
         line = self._format_entry(entry)

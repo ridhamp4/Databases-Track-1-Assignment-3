@@ -1,4 +1,5 @@
 import os
+import threading
 
 from .transaction import TransactionManager
 
@@ -7,11 +8,16 @@ class DatabaseManager:
     def __init__(self, log_path=None):
         self.databases = {}
         self._pending_recovery = {}
+        self._isolation_lock = threading.RLock()
         if log_path is None:
             log_path = os.path.abspath(
                 os.path.join(os.path.dirname(__file__), "..", "db_transactions.log")
             )
-        self.tx_manager = TransactionManager(log_path=log_path, db_manager=self)
+        self.tx_manager = TransactionManager(
+            log_path=log_path,
+            db_manager=self,
+            isolation_lock=self._isolation_lock,
+        )
         self.tx_manager.recover(self)
 
     def create_database(self, db_name):
@@ -29,7 +35,7 @@ class DatabaseManager:
     def list_databases(self):
         return list(self.databases.keys())
 
-    def create_table(self, db_name, table_name, schema, order, search_key):
+    def create_table(self, db_name, table_name, schema, order, search_key, constraints=None):
         if db_name not in self.databases:
             return False
         if table_name not in self.databases[db_name]:
@@ -39,8 +45,10 @@ class DatabaseManager:
                 schema,
                 order,
                 search_key,
+                constraints=constraints,
                 db_name=db_name,
                 tx_manager=self.tx_manager,
+                db_manager=self,
             )
             self._apply_pending_recovery(db_name, table_name)
             return True
@@ -63,6 +71,10 @@ class DatabaseManager:
             return self.databases[db_name].get(table_name)
         return None
 
+    @property
+    def isolation_lock(self):
+        return self._isolation_lock
+
     def begin(self):
         return self.tx_manager.begin()
 
@@ -77,6 +89,15 @@ class DatabaseManager:
             self.apply_log_op(op, undo=False)
         for op in undo_ops:
             self.apply_log_op(op, undo=True)
+
+    def apply_recovery_from_log(self, ops, started, committed):
+        redo_ops = [op for op in ops if op.get("tx_id") in committed]
+        undo_ops = [
+            op
+            for op in reversed(ops)
+            if op.get("tx_id") in started and op.get("tx_id") not in committed
+        ]
+        self.apply_recovery_ops(redo_ops, undo_ops)
 
     def apply_log_op(self, op, undo=False):
         db_name = op.get("db")
