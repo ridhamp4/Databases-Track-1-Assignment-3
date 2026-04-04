@@ -90,12 +90,15 @@ class DatabaseManager:
         for op in undo_ops:
             self.apply_log_op(op, undo=True)
 
-    def apply_recovery_from_log(self, ops, started, committed):
+    def apply_recovery_from_log(self, ops, started, committed, rolled_back=None):
+        if rolled_back is None:
+            rolled_back = set()
+        incomplete = started - committed - rolled_back
         redo_ops = [op for op in ops if op.get("tx_id") in committed]
         undo_ops = [
             op
             for op in reversed(ops)
-            if op.get("tx_id") in started and op.get("tx_id") not in committed
+            if op.get("tx_id") in incomplete
         ]
         self.apply_recovery_ops(redo_ops, undo_ops)
 

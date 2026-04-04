@@ -89,6 +89,8 @@ class TransactionManager:
 
         started = set()
         committed = set()
+        rolled_back = set()
+        max_tx_id = 0
         ops = []
 
         with open(self.log_path, "r", encoding="utf-8") as handle:
@@ -98,6 +100,8 @@ class TransactionManager:
                     continue
                 entry_type, payload = self._parse_log_line(line)
                 tx_id = payload.get("tx_id")
+                if isinstance(tx_id, int):
+                    max_tx_id = max(max_tx_id, tx_id)
 
                 if entry_type == "TX_START":
                     if tx_id is not None:
@@ -107,20 +111,24 @@ class TransactionManager:
                         committed.add(tx_id)
                 elif entry_type == "TX_ROLLBACK":
                     if tx_id is not None:
-                        started.add(tx_id)
+                        rolled_back.add(tx_id)
                 elif entry_type in ("TX_INSERT", "TX_UPDATE", "TX_DELETE"):
                     ops.append(payload)
 
         if hasattr(db_manager, "apply_recovery_from_log"):
-            db_manager.apply_recovery_from_log(ops, started, committed)
+            db_manager.apply_recovery_from_log(ops, started, committed, rolled_back)
         else:
             redo_ops = [op for op in ops if op.get("tx_id") in committed]
+            incomplete = started - committed - rolled_back
             undo_ops = [
                 op
                 for op in reversed(ops)
-                if op.get("tx_id") in started and op.get("tx_id") not in committed
+                if op.get("tx_id") in incomplete
             ]
             db_manager.apply_recovery_ops(redo_ops, undo_ops)
+
+        with self._tx_lock:
+            self._next_tx_id = max(self._next_tx_id, max_tx_id)
 
     def _append_log(self, entry):
         line = self._format_entry(entry)
