@@ -1,19 +1,22 @@
 {
   "baseUrl": "http://localhost:5001",
   "concurrentUsage": {
+    "concurrency": 128,
     "db_counts": {
-      "comments": 6,
+      "comments": 1000,
       "group_members": 7,
-      "likes": 6,
+      "likes": 3,
       "votes": 6
     },
     "expected": {
-      "comments": 6,
+      "comments": 1000,
       "group_members": 7,
-      "likes": 6,
+      "likesMax": 6,
+      "likesMin": 0,
       "votes": 6
     },
     "name": "concurrent_usage",
+    "operationsPerActivity": 1000,
     "participants": [
       "laksh_jain",
       "parthiv_p",
@@ -25,84 +28,97 @@
     "requests": {
       "comments": {
         "fail": 0,
-        "ok": 6,
+        "ok": 1000,
         "status_counts": {
-          "201": 6
+          "201": 1000
         }
       },
       "joins": {
-        "fail": 0,
+        "fail": 994,
         "ok": 6,
         "status_counts": {
-          "200": 6
+          "200": 6,
+          "409": 994
         }
       },
       "likes": {
-        "fail": 0,
-        "ok": 6,
+        "fail": 5,
+        "ok": 995,
         "status_counts": {
-          "200": 6
+          "200": 995,
+          "500": 5
         }
       },
       "votes": {
         "fail": 0,
-        "ok": 6,
+        "ok": 1000,
         "status_counts": {
-          "200": 6
+          "200": 1000
         }
       }
     }
   },
   "failureSimulation": {
     "error_message": "1146 (42S02): Table 'iitgn_connect.definitelymissingtable' doesn't exist",
-    "inserted_post_id": 30,
+    "forced_errors_seen": 1000,
+    "iterations": 1000,
     "name": "failure_simulation",
     "rolled_back_row_count": 0,
-    "success": false
+    "success": true,
+    "unexpected_successes": 0
   },
-  "generatedAt": "2026-04-04T08:18:32.795416+00:00",
+  "generatedAt": "2026-04-04T10:21:23.324278+00:00",
   "raceConditionProbes": {
     "actor": "parthiv_p",
     "artifacts": {
-      "race_group_id": 13,
-      "race_poll_id": 12
+      "race_group_id": 19,
+      "race_poll_id": 18
     },
+    "attempts": 1000,
+    "concurrency": 128,
     "db_checks": {
       "group_membership_rows_for_actor": 1,
       "poll_vote_rows_for_actor": 1,
-      "post_like_rows_for_actor": 1
+      "post_like_rows_for_actor": 0
+    },
+    "expected": {
+      "group_membership_rows_for_actor": 1,
+      "poll_vote_rows_for_actor": 1,
+      "post_like_rows_for_actor_max": 1,
+      "post_like_rows_for_actor_min": 0
     },
     "name": "race_condition_probes",
     "requests": {
       "joins": {
-        "fail": 19,
+        "fail": 999,
         "ok": 1,
         "status_counts": {
           "200": 1,
-          "409": 19
+          "409": 999
         }
       },
       "likes": {
-        "fail": 0,
-        "ok": 10,
+        "fail": 11,
+        "ok": 989,
         "status_counts": {
-          "200": 10
+          "200": 989,
+          "500": 11
         }
       },
       "votes": {
         "fail": 0,
-        "ok": 20,
+        "ok": 1000,
         "status_counts": {
-          "200": 20
+          "200": 1000
         }
       }
     }
   },
   "sharedArtifacts": {
-    "group_id": 12,
-    "poll_id": 11,
-    "poll_option_id": 26,
-    "post_id": 29
+    "group_id": 18,
+    "poll_id": 17,
+    "poll_option_id": 38,
+    "post_id": 2033
   },
   "stressTest": {
     "concurrency": 64,
@@ -112,11 +128,11 @@
       "200": 1000
     },
     "timings_ms": {
-      "average": 611.9739228742184,
-      "max": 1673.975125006109,
-      "min": 66.42524999915622,
-      "p50": 251.07629199919757,
-      "p95": 1552.8199743508594
+      "average": 512.0883793399771,
+      "max": 1648.3484999989741,
+      "min": 41.26091699436074,
+      "p50": 229.99056250046124,
+      "p95": 1496.528895845404
     }
   },
   "users": [

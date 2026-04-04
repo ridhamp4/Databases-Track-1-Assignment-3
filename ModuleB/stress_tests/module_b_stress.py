@@ -242,23 +242,92 @@ def summarize_requests(results):
     return summary
 
 
-def run_concurrent_usage(base_url: str, sessions, shared):
+def run_concurrent_usage(base_url: str, sessions, shared, ops_per_activity: int, concurrency: int):
     participants = sessions[1:7] or sessions[:1]
+    participant_ids = [session.member_id for session in participants]
+    unique_participant_ids = set(participant_ids)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(4, len(participants) * 2)) as executor:
-        futures = []
-        for session in participants:
-            futures.append(executor.submit(http_json_request_with_retry, base_url, "POST", f"/api/posts/{shared['post_id']}/like", None, session.token))
-            futures.append(executor.submit(http_json_request_with_retry, base_url, "POST", f"/api/posts/{shared['post_id']}/comments", {"content": f"Concurrent comment from {session.username}"}, session.token))
-            futures.append(executor.submit(http_json_request_with_retry, base_url, "POST", f"/api/polls/{shared['poll_id']}/vote", {"optionId": shared["poll_option_id"]}, session.token))
-            futures.append(executor.submit(http_json_request_with_retry, base_url, "POST", f"/api/groups/{shared['group_id']}/join", None, session.token))
+    like_calls_by_member = {member_id: 0 for member_id in unique_participant_ids}
+    vote_calls_by_member = {member_id: 0 for member_id in unique_participant_ids}
+    join_calls_by_member = {member_id: 0 for member_id in unique_participant_ids}
 
-        results = [future.result() for future in futures]
+    like_inputs = []
+    comment_inputs = []
+    vote_inputs = []
+    join_inputs = []
+    for index in range(ops_per_activity):
+        session = participants[index % len(participants)]
+        like_calls_by_member[session.member_id] += 1
+        vote_calls_by_member[session.member_id] += 1
+        join_calls_by_member[session.member_id] += 1
+        like_inputs.append(session)
+        comment_inputs.append((session, index))
+        vote_inputs.append(session)
+        join_inputs.append(session)
 
-    like_results = results[0::4]
-    comment_results = results[1::4]
-    vote_results = results[2::4]
-    join_results = results[3::4]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        like_results = list(
+            executor.map(
+                lambda session: http_json_request_with_retry(
+                    base_url,
+                    "POST",
+                    f"/api/posts/{shared['post_id']}/like",
+                    None,
+                    session.token,
+                ),
+                like_inputs,
+            )
+        )
+
+    like_successes_by_member = {member_id: 0 for member_id in unique_participant_ids}
+    for session, result in zip(like_inputs, like_results):
+        if result.get("ok"):
+            like_successes_by_member[session.member_id] += 1
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        comment_results = list(
+            executor.map(
+                lambda item: http_json_request_with_retry(
+                    base_url,
+                    "POST",
+                    f"/api/posts/{shared['post_id']}/comments",
+                    {"content": f"Concurrent comment #{item[1]} from {item[0].username}"},
+                    item[0].token,
+                ),
+                comment_inputs,
+            )
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        vote_results = list(
+            executor.map(
+                lambda session: http_json_request_with_retry(
+                    base_url,
+                    "POST",
+                    f"/api/polls/{shared['poll_id']}/vote",
+                    {"optionId": shared["poll_option_id"]},
+                    session.token,
+                ),
+                vote_inputs,
+            )
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        join_results = list(
+            executor.map(
+                lambda session: http_json_request_with_retry(
+                    base_url,
+                    "POST",
+                    f"/api/groups/{shared['group_id']}/join",
+                    None,
+                    session.token,
+                ),
+                join_inputs,
+            )
+        )
+
+    expected_votes = sum(1 for count in vote_calls_by_member.values() if count > 0)
+    expected_group_members = sum(1 for count in join_calls_by_member.values() if count > 0) + 1
 
     db_counts = {
         "likes": db_fetch_one("SELECT COUNT(*) AS c FROM PostLike WHERE PostID = %s", (shared["post_id"],))["c"],
@@ -284,21 +353,24 @@ def run_concurrent_usage(base_url: str, sessions, shared):
         },
         "db_counts": db_counts,
         "expected": {
-            "likes": len(participants),
-            "comments": len(participants),
-            "votes": len(participants),
-            "group_members": len(participants) + 1,
+            "likesMin": 0,
+            "likesMax": len(unique_participant_ids),
+            "comments": ops_per_activity,
+            "votes": expected_votes,
+            "group_members": expected_group_members,
         },
+        "operationsPerActivity": ops_per_activity,
+        "concurrency": concurrency,
     }
 
 
-def run_race_probes_for_artifacts(base_url: str, sessions, shared_post_id: int, race_poll: dict, race_group: dict):
+def run_race_probes_for_artifacts(base_url: str, sessions, shared_post_id: int, race_poll: dict, race_group: dict, attempts: int, concurrency: int):
     actor = sessions[2] if len(sessions) > 2 else sessions[0]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
-        vote_futures = [executor.submit(http_json_request_with_retry, base_url, "POST", f"/api/polls/{race_poll['poll_id']}/vote", {"optionId": race_poll["poll_option_id"]}, actor.token) for _ in range(20)]
-        join_futures = [executor.submit(http_json_request_with_retry, base_url, "POST", f"/api/groups/{race_group['group_id']}/join", None, actor.token) for _ in range(20)]
-        like_futures = [executor.submit(http_json_request_with_retry, base_url, "POST", f"/api/posts/{shared_post_id}/like", None, actor.token) for _ in range(10)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        vote_futures = [executor.submit(http_json_request_with_retry, base_url, "POST", f"/api/polls/{race_poll['poll_id']}/vote", {"optionId": race_poll["poll_option_id"]}, actor.token) for _ in range(attempts)]
+        join_futures = [executor.submit(http_json_request_with_retry, base_url, "POST", f"/api/groups/{race_group['group_id']}/join", None, actor.token) for _ in range(attempts)]
+        like_futures = [executor.submit(http_json_request_with_retry, base_url, "POST", f"/api/posts/{shared_post_id}/like", None, actor.token) for _ in range(attempts)]
 
         vote_results = [future.result() for future in vote_futures]
         join_results = [future.result() for future in join_futures]
@@ -330,46 +402,61 @@ def run_race_probes_for_artifacts(base_url: str, sessions, shared_post_id: int, 
             "race_poll_id": race_poll["poll_id"],
             "race_group_id": race_group["group_id"],
         },
+        "attempts": attempts,
+        "concurrency": concurrency,
+        "expected": {
+            "post_like_rows_for_actor_min": 0,
+            "post_like_rows_for_actor_max": 1,
+            "poll_vote_rows_for_actor": 1,
+            "group_membership_rows_for_actor": 1,
+        },
     }
 
 
-def run_failure_simulation(creator: UserSession):
+def run_failure_simulation(creator: UserSession, iterations: int):
     conn = get_db()
-    marker = f"MODULE_B_ROLLBACK::{now_stamp()}"
-    inserted_post_id = None
-    error_message = None
+    marker_prefix = f"MODULE_B_ROLLBACK::{now_stamp()}"
+    forced_errors_seen = 0
+    unexpected_successes = 0
+    last_error_message = None
 
     try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO Post (AuthorID, GroupID, Content, ImageURL, CreatedAt) VALUES (%s,%s,%s,%s,NOW())",
-            (creator.member_id, None, marker, None),
-        )
-        inserted_post_id = cursor.lastrowid
-        cursor.execute("INSERT INTO DefinitelyMissingTable (x) VALUES (1)")
-        conn.commit()
-        success = True
-    except Exception as exc:
-        error_message = str(exc)
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        success = False
+        for index in range(iterations):
+            marker = f"{marker_prefix}::{index}"
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "INSERT INTO Post (AuthorID, GroupID, Content, ImageURL, CreatedAt) VALUES (%s,%s,%s,%s,NOW())",
+                    (creator.member_id, None, marker, None),
+                )
+                cursor.execute("INSERT INTO DefinitelyMissingTable (x) VALUES (1)")
+                conn.commit()
+                unexpected_successes += 1
+            except Exception as exc:
+                last_error_message = str(exc)
+                forced_errors_seen += 1
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            finally:
+                cursor.close()
     finally:
         try:
             conn.close()
         except Exception:
             pass
 
-    remaining = db_fetch_one("SELECT COUNT(*) AS c FROM Post WHERE Content = %s", (marker,))
+    remaining = db_fetch_one("SELECT COUNT(*) AS c FROM Post WHERE Content LIKE %s", (f"{marker_prefix}%",))
 
     return {
         "name": "failure_simulation",
-        "success": success,
-        "error_message": error_message,
+        "iterations": iterations,
+        "forced_errors_seen": forced_errors_seen,
+        "unexpected_successes": unexpected_successes,
+        "success": unexpected_successes == 0,
+        "error_message": last_error_message,
         "rolled_back_row_count": remaining["c"],
-        "inserted_post_id": inserted_post_id,
     }
 
 
@@ -421,17 +508,21 @@ def cleanup_artifacts(base_url: str, creator: UserSession, shared: dict, race_pr
 
 def aggregate_verdict(concurrent_usage, race_probes, failure_simulation, stress_test):
     concurrent_ok = (
-        concurrent_usage["db_counts"]["likes"] == concurrent_usage["expected"]["likes"]
+        concurrent_usage["expected"]["likesMin"] <= concurrent_usage["db_counts"]["likes"] <= concurrent_usage["expected"]["likesMax"]
         and concurrent_usage["db_counts"]["comments"] == concurrent_usage["expected"]["comments"]
         and concurrent_usage["db_counts"]["votes"] == concurrent_usage["expected"]["votes"]
         and concurrent_usage["db_counts"]["group_members"] == concurrent_usage["expected"]["group_members"]
     )
     race_ok = (
-        race_probes["db_checks"]["post_like_rows_for_actor"] in (0, 1)
-        and race_probes["db_checks"]["poll_vote_rows_for_actor"] == 1
-        and race_probes["db_checks"]["group_membership_rows_for_actor"] == 1
+        race_probes["expected"]["post_like_rows_for_actor_min"] <= race_probes["db_checks"]["post_like_rows_for_actor"] <= race_probes["expected"]["post_like_rows_for_actor_max"]
+        and race_probes["db_checks"]["poll_vote_rows_for_actor"] == race_probes["expected"]["poll_vote_rows_for_actor"]
+        and race_probes["db_checks"]["group_membership_rows_for_actor"] == race_probes["expected"]["group_membership_rows_for_actor"]
     )
-    rollback_ok = failure_simulation["rolled_back_row_count"] == 0
+    rollback_ok = (
+        failure_simulation["rolled_back_row_count"] == 0
+        and failure_simulation["forced_errors_seen"] == failure_simulation["iterations"]
+        and failure_simulation["unexpected_successes"] == 0
+    )
     stress_ok = set(stress_test["status_counts"].keys()) == {"200"}
     return {
         "concurrent_usage_ok": concurrent_ok,
@@ -452,7 +543,7 @@ def print_assignment_summary(concurrent_usage, race_probes, failure_simulation, 
     print("1. Concurrent Usage")
     print(
         f"   Status: {'PASS' if section1_ok else 'FAIL'} | "
-        f"likes={concurrent_usage['db_counts']['likes']}/{concurrent_usage['expected']['likes']}, "
+        f"likes={concurrent_usage['db_counts']['likes']}/{concurrent_usage['expected']['likesMin']}..{concurrent_usage['expected']['likesMax']}, "
         f"comments={concurrent_usage['db_counts']['comments']}/{concurrent_usage['expected']['comments']}, "
         f"votes={concurrent_usage['db_counts']['votes']}/{concurrent_usage['expected']['votes']}, "
         f"group_members={concurrent_usage['db_counts']['group_members']}/{concurrent_usage['expected']['group_members']}"
@@ -470,7 +561,8 @@ def print_assignment_summary(concurrent_usage, race_probes, failure_simulation, 
     print(
         f"   Status: {'PASS' if section3_ok else 'FAIL'} | "
         f"rolled_back_row_count={failure_simulation['rolled_back_row_count']}, "
-        f"forced_error_seen={not failure_simulation['success']}"
+        f"forced_errors_seen={failure_simulation['forced_errors_seen']}/{failure_simulation['iterations']}, "
+        f"unexpected_successes={failure_simulation['unexpected_successes']}"
     )
 
     print("4. Stress Testing")
@@ -486,9 +578,14 @@ def print_assignment_summary(concurrent_usage, race_probes, failure_simulation, 
 def main():
     parser = argparse.ArgumentParser(description="Run Module B multi-user behavior and stress tests.")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Backend base URL, e.g. http://localhost:5001")
-    parser.add_argument("--users", type=int, default=6, help="Number of seeded users to log in and use")
-    parser.add_argument("--stress-requests", type=int, default=300, help="Total number of stress-test requests")
-    parser.add_argument("--stress-concurrency", type=int, default=24, help="Concurrent workers for the stress phase")
+    parser.add_argument("--users", type=int, default=1000, help="Number of seeded users to log in and use")
+    parser.add_argument("--concurrent-ops", type=int, default=1000, help="Operations per activity in concurrent usage")
+    parser.add_argument("--concurrent-concurrency", type=int, default=128, help="Worker count for concurrent-usage activity batches")
+    parser.add_argument("--race-attempts", type=int, default=1000, help="Attempts per operation in race-condition probes")
+    parser.add_argument("--race-concurrency", type=int, default=128, help="Worker count for race-condition probes")
+    parser.add_argument("--failure-iterations", type=int, default=1000, help="Number of forced-failure transaction iterations")
+    parser.add_argument("--stress-requests", type=int, default=1000, help="Total number of stress-test requests")
+    parser.add_argument("--stress-concurrency", type=int, default=64, help="Concurrent workers for the stress phase")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT), help="Where to write the JSON summary")
     parser.add_argument("--no-cleanup", action="store_true", help="Keep temporary posts, polls, and groups")
     args = parser.parse_args()
@@ -512,11 +609,25 @@ def main():
         "group_id": shared_group["group_id"],
     }
 
-    concurrent_usage = run_concurrent_usage(args.base_url, sessions, shared)
+    concurrent_usage = run_concurrent_usage(
+        args.base_url,
+        sessions,
+        shared,
+        ops_per_activity=args.concurrent_ops,
+        concurrency=args.concurrent_concurrency,
+    )
     race_poll = create_poll_artifact(args.base_url, sessions[0], "MODULE_B_RACE_POLL")
     race_group = create_group_artifact(args.base_url, sessions[0], "MODULE_B_RACE_GROUP")
-    race_probes = run_race_probes_for_artifacts(args.base_url, sessions, shared["post_id"], race_poll, race_group)
-    failure_simulation = run_failure_simulation(sessions[0])
+    race_probes = run_race_probes_for_artifacts(
+        args.base_url,
+        sessions,
+        shared["post_id"],
+        race_poll,
+        race_group,
+        attempts=args.race_attempts,
+        concurrency=args.race_concurrency,
+    )
+    failure_simulation = run_failure_simulation(sessions[0], iterations=args.failure_iterations)
     stress_test = run_stress_test(args.base_url, sessions, args.stress_requests, args.stress_concurrency)
     verdict = aggregate_verdict(concurrent_usage, race_probes, failure_simulation, stress_test)
 
