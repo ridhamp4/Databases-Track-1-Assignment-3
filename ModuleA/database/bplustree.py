@@ -36,25 +36,28 @@ class BPlusTree:
             self.root = new_root
             new_root.children.append(root)
             self._split_child(new_root, 0)
-            self._insert_non_full(new_root, key, value)
+            return self._insert_non_full(new_root, key, value)
         else:
-            self._insert_non_full(root, key, value)
+            return self._insert_non_full(root, key, value)
 
     def _insert_non_full(self, node, key, value):
         if node.is_leaf:
             i = bisect.bisect_left(node.keys, key)
             if i < len(node.keys) and node.keys[i] == key:
+                old_value = node.values[i]
                 node.values[i] = value
+                return old_value
             else:
                 node.keys.insert(i, key)
                 node.values.insert(i, value)
+                return None
         else:
             i = bisect.bisect_right(node.keys, key)
             if node.children[i].is_full():
                 self._split_child(node, i)
                 if key > node.keys[i]:
                     i += 1
-            self._insert_non_full(node.children[i], key, value)
+            return self._insert_non_full(node.children[i], key, value)
 
     def _split_child(self, parent, index):
         order = self.order
@@ -86,14 +89,17 @@ class BPlusTree:
 
     def delete(self, key):
         if not self.root.keys:
-            return False
+            return None
+        old_value = self.search(key)
+        if old_value is None:
+            return None
             
         deleted = self._delete(self.root, key)
         
         if not self.root.keys and not self.root.is_leaf:
             self.root = self.root.children[0]
             
-        return deleted
+        return old_value if deleted else None
 
     def _delete(self, node, key):
         min_keys = (self.order // 2) - 1 if self.order % 2 == 0 else self.order // 2
@@ -178,9 +184,10 @@ class BPlusTree:
         
         i = bisect.bisect_left(node.keys, key)
         if i < len(node.keys) and node.keys[i] == key:
+            old_value = node.values[i]
             node.values[i] = new_value
-            return True
-        return False
+            return old_value
+        return None
 
     def range_query(self, start_key, end_key):
         node = self.root

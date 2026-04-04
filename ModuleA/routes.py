@@ -4,6 +4,38 @@ from database.db_manager import DatabaseManager
 api_bp = Blueprint('api', __name__)
 db_manager = DatabaseManager()
 
+
+@api_bp.route('/transactions/begin', methods=['POST'])
+def begin_transaction():
+    tx_id = db_manager.begin()
+    return jsonify({'tx_id': tx_id}), 201
+
+
+@api_bp.route('/transactions/commit', methods=['POST'])
+def commit_transaction():
+    data = request.json or {}
+    tx_id = data.get('tx_id')
+    if tx_id is None:
+        return jsonify({'error': 'tx_id required'}), 400
+    try:
+        db_manager.commit(tx_id)
+        return jsonify({'message': 'Transaction committed', 'tx_id': tx_id}), 200
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@api_bp.route('/transactions/rollback', methods=['POST'])
+def rollback_transaction():
+    data = request.json or {}
+    tx_id = data.get('tx_id')
+    if tx_id is None:
+        return jsonify({'error': 'tx_id required'}), 400
+    try:
+        db_manager.rollback(tx_id)
+        return jsonify({'message': 'Transaction rolled back', 'tx_id': tx_id}), 200
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
 @api_bp.route('/databases', methods=['GET'])
 def list_databases():
     return jsonify(db_manager.list_databases()), 200
@@ -101,7 +133,7 @@ def update_record(db_name, table_name, record_id):
         rec_id = record_id
         
     try:
-        if table.update(rec_id, request.json):
+        if table.update(rec_id, request.json) is not None:
             return jsonify({'message': 'Record updated'}), 200
         return jsonify({'error': 'Record not found'}), 404
     except ValueError as e:
@@ -118,7 +150,7 @@ def delete_record(db_name, table_name, record_id):
     except ValueError:
         rec_id = record_id
         
-    if table.delete(rec_id):
+    if table.delete(rec_id) is not None:
         return jsonify({'message': 'Record deleted'}), 200
     return jsonify({'error': 'Record not found'}), 404
 
