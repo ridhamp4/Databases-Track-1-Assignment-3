@@ -5,6 +5,7 @@ This workspace contains the Module B multi-user behaviour and stress testing del
 ## What is included
 
 - `stress_tests/module_b_stress.py` - live API harness for concurrent usage, race-condition probes, failure simulation, and load testing.
+- `stress_tests/locustfile.py` - Locust profile for mixed login/read/comment load testing.
 - `stress_tests/module_b_results.json` - generated JSON report after each run.
 
 ## How to run
@@ -22,12 +23,38 @@ Then run the Module B harness from the workspace root in a second terminal:
 python stress_tests/module_b_stress.py --base-url http://localhost:5001
 ```
 
+To run the Locust profile, install dependencies in the workspace venv and launch:
+
+```bash
+locust -f stress_tests/locustfile.py --host http://localhost:5001 --headless -u 100 -r 25 --run-time 20s --stop-timeout 5 --csv stress_tests/locust_module_b_small --only-summary
+```
+
 Optional arguments:
 
 - `--users` controls how many seeded accounts participate.
 - `--stress-requests` controls the total number of load-test requests.
 - `--stress-concurrency` controls the worker pool size.
 - `--no-cleanup` keeps the temporary test posts, polls, and groups for manual inspection.
+
+## Reported Results
+
+The custom Python harness was run at 1000-scale for every assignment section:
+
+| Section                | Result |
+| ---------------------- | ------ |
+| Concurrent Usage       | PASS   |
+| Race Condition Testing | PASS   |
+| Failure Simulation     | PASS   |
+| Stress Testing         | PASS   |
+
+The Locust profile was run with 100 users for 20 seconds and completed without failures:
+
+| Metric                  | Value  |
+| ----------------------- | ------ |
+| Total requests          | 2734   |
+| Failures                | 0      |
+| Average latency         | 386 ms |
+| 95th percentile latency | 750 ms |
 
 ## What the harness checks
 

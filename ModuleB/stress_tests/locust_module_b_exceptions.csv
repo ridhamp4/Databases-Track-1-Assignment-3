@@ -1,0 +1,142 @@
+Count,Message,Traceback,Nodes
+162,"HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/posts/3035/comments (Caused by ConnectTimeoutError(<HTTPConnection(host='localhost', port=5001) at 0x109e396a0>, 'Connection to localhost timed out. (connect timeout=None)'))","  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 363, in run
+    self.execute_next_task()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 396, in execute_next_task
+    self.execute_task(self._task_queue.popleft())
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 513, in execute_task
+    task(self.user)
+    ~~~~^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/stress_tests/locustfile.py"", line 86, in comment_shared_post
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 362, in raise_for_status
+    raise self.error
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 425, in __exit__
+    self.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 362, in raise_for_status
+    raise self.error
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 250, in _send_request_safe_mode
+    return super().request(method, url, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/requests/sessions.py"", line 592, in request
+    resp = self.send(prep, **send_kwargs)
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/requests/sessions.py"", line 706, in send
+    r = adapter.send(request, **kwargs)
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/requests/adapters.py"", line 666, in send
+    raise ConnectTimeout(e, request=request)
+",local
+38,"HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/polls/ (Caused by ConnectTimeoutError(<HTTPConnection(host='localhost', port=5001) at 0x10a671bf0>, 'Connection to localhost timed out. (connect timeout=None)'))","  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 363, in run
+    self.execute_next_task()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 396, in execute_next_task
+    self.execute_task(self._task_queue.popleft())
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 513, in execute_task
+    task(self.user)
+    ~~~~^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/stress_tests/locustfile.py"", line 96, in read_polls
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 362, in raise_for_status
+    raise self.error
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 425, in __exit__
+    self.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 362, in raise_for_status
+    raise self.error
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 250, in _send_request_safe_mode
+    return super().request(method, url, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/requests/sessions.py"", line 592, in request
+    resp = self.send(prep, **send_kwargs)
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/requests/sessions.py"", line 706, in send
+    r = adapter.send(request, **kwargs)
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/requests/adapters.py"", line 666, in send
+    raise ConnectTimeout(e, request=request)
+",local
+35,"HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/posts?feed=global (Caused by ConnectTimeoutError(<HTTPConnection(host='localhost', port=5001) at 0x10a6717b0>, 'Connection to localhost timed out. (connect timeout=None)'))","  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 363, in run
+    self.execute_next_task()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 396, in execute_next_task
+    self.execute_task(self._task_queue.popleft())
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 513, in execute_task
+    task(self.user)
+    ~~~~^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/stress_tests/locustfile.py"", line 91, in read_feed
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 362, in raise_for_status
+    raise self.error
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 425, in __exit__
+    self.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 362, in raise_for_status
+    raise self.error
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 250, in _send_request_safe_mode
+    return super().request(method, url, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/requests/sessions.py"", line 592, in request
+    resp = self.send(prep, **send_kwargs)
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/requests/sessions.py"", line 706, in send
+    r = adapter.send(request, **kwargs)
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/requests/adapters.py"", line 666, in send
+    raise ConnectTimeout(e, request=request)
+",local
+34,500 Server Error: INTERNAL SERVER ERROR for url: http://localhost:5001/api/polls/,"  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 363, in run
+    self.execute_next_task()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 396, in execute_next_task
+    self.execute_task(self._task_queue.popleft())
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 513, in execute_task
+    task(self.user)
+    ~~~~^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/stress_tests/locustfile.py"", line 96, in read_polls
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 363, in raise_for_status
+    Response.raise_for_status(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/requests/models.py"", line 1028, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+",local
+6,500 Server Error: INTERNAL SERVER ERROR for url: http://localhost:5001/api/posts?feed=global,"  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 363, in run
+    self.execute_next_task()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 396, in execute_next_task
+    self.execute_task(self._task_queue.popleft())
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 513, in execute_task
+    task(self.user)
+    ~~~~^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/stress_tests/locustfile.py"", line 91, in read_feed
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 363, in raise_for_status
+    Response.raise_for_status(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/requests/models.py"", line 1028, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+",local
+18,500 Server Error: INTERNAL SERVER ERROR for url: http://localhost:5001/api/posts/3035/comments,"  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 363, in run
+    self.execute_next_task()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 396, in execute_next_task
+    self.execute_task(self._task_queue.popleft())
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/user/task.py"", line 513, in execute_task
+    task(self.user)
+    ~~~~^^^^^^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/stress_tests/locustfile.py"", line 86, in comment_shared_post
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/locust/clients.py"", line 363, in raise_for_status
+    Response.raise_for_status(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File ""/Users/na/db_track1_assignment3_moduleb/.venv/lib/python3.14/site-packages/requests/models.py"", line 1028, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+",local
