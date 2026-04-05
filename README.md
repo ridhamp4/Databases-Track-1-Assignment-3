@@ -9,7 +9,7 @@ This repository contains **Assignment 3** deliverables for:
 
 ## Video Links
 
-- **Module A video (ACID over B+Tree):** [Vido Link](https://drive.google.com/drive/folders/1mQhuZsHSjTK9E0fT-kfTcObeqIXp6DEE?usp=sharing)
+- **Module A video (ACID over B+Tree):** [Video Link](https://canva.link/xhn5uioz093wiko)
 - **Module B video (API/application testing + Locust):** [Video Link](https://drive.google.com/drive/folders/1JIU-ww6tLI8o2geELsPQ9wfkWjCJDl0t?usp=sharing)
 
 > Replace the placeholders with your final uploaded/unlisted video URLs.
