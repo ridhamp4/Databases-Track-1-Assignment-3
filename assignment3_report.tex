@@ -131,8 +131,8 @@ Module B & \texttt{ModuleB/stress\_tests/module\_b\_stress.py} + \texttt{ModuleB
 \addcontentsline{toc}{section}{Video Links}
 
 \begin{itemize}[noitemsep]
-  \item \textbf{Module A (ACID over B+Tree):} \href{https://drive.google.com/drive/folders/1mQhuZsHSjTK9E0fT-kfTcObeqIXp6DEE?usp=sharing}{https://drive.google.com/drive/folders/1mQhuZsHSjTK9E0fT-kfTcObeqIXp6DEE}
-  \item \textbf{Module B (API/Application testing + Locust):} \href{https://drive.google.com/drive/folders/1JIU-ww6tLI8o2geELsPQ9wfkWjCJDl0t?usp=sharing}{https://drive.google.com/drive/folders/1JIU-ww6tLI8o2geELsPQ9wfkWjCJDl0t}
+  \item \textbf{Module A (ACID over B+Tree):} \href{https://drive.google.com/drive/folders/1mQhuZsHSjTK9E0fT-kfTcObeqIXp6DEE?usp=sharing}{Google Drive Link}
+  \item \textbf{Module B (API/Application testing + Locust):} \href{https://drive.google.com/drive/folders/1JIU-ww6tLI8o2geELsPQ9wfkWjCJDl0t?usp=sharing}{Google Drive Link}
 \end{itemize}
 
 % #####################################################################
@@ -196,6 +196,15 @@ locust -f stress_tests/locustfile.py --host http://localhost:5001 --headless \
 \addcontentsline{toc}{part}{Module A: Transaction Engine and Recovery over B+ Tree}
 
 \section{Implementation Details (Module A)}
+
+\subsection{How Correctness, Failures, and Multi-User Conflicts are Handled}
+This section maps directly to the evaluation rubric.
+
+\begin{itemize}[noitemsep]
+  \item \textbf{How correctness of operations is ensured:} Table-level validation enforces schema constraints (types, non-negative numeric constraints) and reference checks across relations before applying writes. All mutations flow through a transaction-aware API so operations are applied in a controlled way.
+  \item \textbf{How failures are handled:} A write-ahead log (WAL) records \emph{old/new images} for each operation. On crash/restart, we \textbf{redo committed} transactions and \textbf{undo incomplete} transactions, ensuring no partial state persists.
+  \item \textbf{How multi-user conflicts are handled:} Isolation is ensured using a global (re-entrant) lock at the database/transaction manager level, so concurrent transactions serialize and do not expose intermediate states.
+\end{itemize}
 
 \subsection{Engine Architecture}
 Each relation is stored as a dedicated B+ tree. All mutations occur directly on table B+ trees through table abstractions managed by \texttt{DatabaseManager}.
@@ -594,6 +603,25 @@ Primary output file:
 \begin{itemize}[noitemsep]
   \item \texttt{ModuleB/stress\_tests/module\_b\_results.json}
   \item Locust CSV outputs in \texttt{ModuleB/stress\_tests/} (e.g., \texttt{locust\_module\_b\_stats.csv})
+\end{itemize}
+
+% #####################################################################
+%                   OBSERVATIONS AND LIMITATIONS
+% #####################################################################
+\section{Observations and Limitations}
+
+\subsection{Observations}
+\begin{itemize}[noitemsep]
+  \item \textbf{Module A:} ACID tests pass with WAL-based recovery; the redo/undo partitioning (committed vs incomplete) prevents partial writes after crashes and avoids double-undo of rolled-back transactions.
+  \item \textbf{Module B:} Under concurrent usage and race probes, database-level counts (likes/votes/memberships) remain within expected bounds (no duplicate rows per user-resource pair). Failure simulation confirms rollback leaves \texttt{rolled\_back\_row\_count = 0}. Stress phases provide latency summaries (P50/P95) and success-rate checks.
+\end{itemize}
+
+\subsection{Limitations}
+\begin{itemize}[noitemsep]
+  \item \textbf{Isolation model (Module A):} The global lock provides strong isolation (serial execution) but limits throughput and does not allow fine-grained concurrent transactions.
+  \item \textbf{Environment sensitivity (Module B):} Stress/stability metrics (e.g., latency percentiles) depend on MySQL configuration, machine resources, and network/OS scheduling.
+  \item \textbf{Seed-account cycling (Module B harness):} The harness can create many sessions by cycling through a fixed set of seed accounts; this is sufficient for concurrency stress on shared artifacts but is not equivalent to having thousands of distinct registered users.
+  \item \textbf{Failure injection approach:} Failure simulation intentionally uses an invalid SQL statement (missing table) to force a rollback; it validates rollback correctness but does not cover every possible crash mode (e.g., power loss during fsync).
 \end{itemize}
 
 % #####################################################################
