@@ -5,7 +5,6 @@ This workspace contains the Module B multi-user behaviour and stress testing del
 ## What is included
 
 - `stress_tests/module_b_stress.py` - live API harness for concurrent usage, race-condition probes, failure simulation, and load testing.
-- `stress_tests/module_b_on_module_a.py` - Module B implementation that stress-tests the Module A B+Tree transaction engine directly.
 - `stress_tests/locustfile.py` - Locust profile for mixed login/read/comment load testing.
 - `stress_tests/module_b_results.json` - generated JSON report after each run.
 
@@ -23,16 +22,6 @@ Then run the Module B harness from the workspace root in a second terminal:
 ```bash
 python stress_tests/module_b_stress.py --base-url http://localhost:5001
 ```
-
-To run Module B directly over Module A code (engine-level concurrent/failure testing):
-
-```bash
-python stress_tests/module_b_on_module_a.py
-```
-
-This produces:
-
-- `stress_tests/module_b_on_module_a_results.json`
 
 To run the Locust profile, install dependencies in the workspace venv and launch:
 

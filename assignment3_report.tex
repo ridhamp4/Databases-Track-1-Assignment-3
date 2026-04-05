@@ -103,15 +103,15 @@ Rudra Pratap Singh & B & Concurrency/race/failure test implementation \\
 \textbf{Module} & \textbf{Artifact} \\
 \hline
 Module A & \texttt{ModuleA/} implementation + ACID tests \\
-Module B & \texttt{ModuleB/stress\_tests/module\_b\_on\_module\_a.py} \\
+Module B & \texttt{ModuleB/stress\_tests/module\_b\_stress.py} + \texttt{ModuleB/stress\_tests/locustfile.py} \\
 \hline
 \end{tabular}
 
 \vfill
 \begin{center}
 \fbox{\parbox{0.9\textwidth}{\centering\small
-\textbf{Primary Result File:} \texttt{ModuleB/stress\_tests/module\_b\_on\_module\_a\_results.json} \\
-\textbf{Large-volume run used in this report:} workers=24, tx-per-worker=500, race-attempts=2000, fail-probability=0.25
+\textbf{Primary Result File:} \texttt{ModuleB/stress\_tests/module\_b\_results.json} \\
+\textbf{Tool-based stress:} Locust headless run (e.g., 100 users for 20 seconds)
 }}
 \end{center}
 \vspace{1cm}
@@ -169,8 +169,9 @@ python test/Atomicity.py --mode verify
 cd ../ModuleB
 python stress_tests/module_b_stress.py --base-url http://localhost:5001
 
-# Module B engine-level stress over Module A
-python stress_tests/module_b_on_module_a.py
+# Module B tool-based stress (Locust)
+locust -f stress_tests/locustfile.py --host http://localhost:5001 --headless \
+  -u 100 -r 25 --run-time 20s --stop-timeout 5 --csv stress_tests/locust_module_b --only-summary
 \end{lstlisting}
 
 % #####################################################################
@@ -190,7 +191,6 @@ Core files:
   \item \texttt{ModuleA/database/table.py}
   \item \texttt{ModuleA/database/transaction.py}
   \item \texttt{ModuleA/database/db\_manager.py}
-  \item \texttt{ModuleA/routes.py}
 \end{itemize}
 
 \subsection{Transaction and WAL Workflow}
@@ -276,12 +276,12 @@ Durability: PASS
 %                        MODULE B
 % #####################################################################
 \newpage
-\part*{Module B: Concurrent Workload and Stress Testing (Dual Validation Paths)}
-\addcontentsline{toc}{part}{Module B: Concurrent Workload and Stress Testing (Dual Validation Paths)}
+\part*{Module B: Concurrent Workload and Stress Testing (API/Application Perspective)}
+\addcontentsline{toc}{part}{Module B: Concurrent Workload and Stress Testing (API/Application Perspective)}
 
 \section{Implementation Details (Module B)}
 
-\subsection{Path A: Original Assignment2 Flask Backend Stress (module\_b\_stress.py)}
+\subsection{Assignment2 Flask Backend Stress (module\_b\_stress.py)}
 The original Module B implementation directly stress-tests the Assignment2 Flask backend service (running at \texttt{http://localhost:5001}) and validates multi-user behavior at API level.
 
 Primary script:
@@ -310,6 +310,16 @@ Representative API areas covered by this original harness:
   \item read-heavy stress throughput and latency summary.
 \end{itemize}
 
+\subsubsection{Concurrent Usage (How we do it)}
+We simulate many logged-in users performing writes at the same time. The harness first creates a \emph{shared post}, \emph{shared poll}, and \emph{shared group}, then runs concurrent requests from multiple user sessions against these shared resources.
+
+Concretely, the harness:
+\begin{itemize}[noitemsep]
+  \item creates multiple authenticated sessions via \texttt{/api/auth/login},
+  \item issues concurrent \texttt{POST} requests for likes/comments/votes/joins, targeting the same artifact IDs,
+  \item verifies users do not interfere using database checks and expected count ranges written to \texttt{module\_b\_results.json}.
+\end{itemize}
+
 Representative workload pattern from the original harness:
 \begin{lstlisting}[style=python, caption={Concurrent API writes in module\_b\_stress.py (representative)}]
 with ThreadPoolExecutor(max_workers=concurrency) as executor:
@@ -325,22 +335,161 @@ with ThreadPoolExecutor(max_workers=concurrency) as executor:
   ))
 \end{lstlisting}
 
-The same script also validates rollback behavior through forced SQL errors:
-\begin{lstlisting}[style=python, caption={Failure simulation logic in module\_b\_stress.py (representative)}]
-for _ in range(iterations):
-    try:
-        # deliberate missing-table query to trigger DB error
-        cursor.execute("INSERT INTO definitelymissingtable VALUES (1)")
-    except Exception:
-        conn.rollback()
+\textbf{How we tested it (verification + pass criteria).}
+We run the harness with a concurrency-heavy configuration and verify both the printed summary and the stored JSON report.
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, caption={Concurrent-usage test run command (Module B)}]
+# Terminal 1: start backend
+cd ModuleB/Assignment2/app/backend
+python app.py
+
+# Terminal 2: run harness
+cd ModuleB
+python stress_tests/module_b_stress.py \
+  --base-url http://localhost:5001 \
+  --concurrent-ops 1000 \
+  --concurrent-concurrency 128
 \end{lstlisting}
+
+On-screen verification during evaluation:
+\begin{itemize}[noitemsep]
+  \item show the terminal summary printed by the harness (Concurrent Usage: PASS/FAIL),
+  \item open \texttt{ModuleB/stress\_tests/module\_b\_results.json} and check:
+    \begin{itemize}[noitemsep]
+      \item \texttt{concurrentUsage.db\_counts} vs \texttt{concurrentUsage.expected},
+      \item \texttt{verdict.concurrent\_usage\_ok == true}.
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Race Condition Testing (How we do it)}
+We pick critical operations where races commonly create duplicates or inconsistent state, and we run many concurrent attempts against the \emph{same} record.
+
+Critical operations selected in this application:
+\begin{itemize}[noitemsep]
+  \item liking the same post (should be at most 1 like per user per post),
+  \item voting on the same poll (exactly 1 vote per user for a poll),
+  \item joining the same group (exactly 1 membership row per user per group).
+\end{itemize}
+
+The harness executes repeated concurrent attempts, then checks the database for duplicates. Example DB checks (stored in \texttt{raceConditionProbes.db\_checks} in the JSON):
+\begin{lstlisting}[basicstyle=\ttfamily\small, caption={Representative race-condition DB checks (no duplicates)}]
+SELECT COUNT(*)
+FROM PostLike
+WHERE PostID = <shared_post_id> AND MemberID = <actor_id>;
+
+SELECT COUNT(*)
+FROM PollVote pv
+JOIN PollOption po ON pv.OptionID = po.OptionID
+WHERE po.PollID = <poll_id> AND pv.MemberID = <actor_id>;
+
+SELECT COUNT(*)
+FROM GroupMembership
+WHERE GroupID = <group_id> AND MemberID = <actor_id>;
+\end{lstlisting}
+
+Pass condition: these counts match the expected bounds (e.g., 0--1 for post-like rows, exactly 1 for vote and membership).
+
+\textbf{How we tested it (verification + pass criteria).}
+We run the harness with a high number of attempts and high worker concurrency for the race probes, then verify that DB counts match expected constraints.
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, caption={Race-condition test run command (Module B)}]
+cd ModuleB
+python stress_tests/module_b_stress.py \
+  --base-url http://localhost:5001 \
+  --race-attempts 1000 \
+  --race-concurrency 128
+\end{lstlisting}
+
+Pass criteria in the JSON report:
+\begin{itemize}[noitemsep]
+  \item \texttt{raceConditionProbes.db\_checks} matches \texttt{raceConditionProbes.expected},
+  \item \texttt{verdict.race\_conditions\_ok == true}.
+\end{itemize}
+
+\subsubsection{Failure Simulation (How we do it)}
+We introduce a deliberate database failure \emph{mid-transaction} to ensure the system rolls back correctly and does not persist partial data.
+
+Implementation idea:
+\begin{itemize}[noitemsep]
+  \item execute a valid insert (e.g., insert a new post row),
+  \item immediately execute an invalid SQL statement (insert into a missing table) to force an exception,
+  \item call \texttt{rollback()},
+  \item verify that no marker rows exist in the database.
+\end{itemize}
+
+Representative code from the harness:
+\begin{lstlisting}[style=python, caption={Failure simulation + rollback verification in module\_b\_stress.py (representative)}]
+cursor.execute(
+  "INSERT INTO Post (AuthorID, GroupID, Content, ImageURL, CreatedAt) VALUES (%s,%s,%s,%s,NOW())",
+  (creator.member_id, None, marker, None),
+)
+cursor.execute("INSERT INTO DefinitelyMissingTable (x) VALUES (1)")
+conn.commit()
+
+... except Exception:
+  conn.rollback()
+
+remaining = db_fetch_one(
+  "SELECT COUNT(*) AS c FROM Post WHERE Content LIKE %s",
+  (f"{marker_prefix}%",),
+)
+\end{lstlisting}
+
+\textbf{How we tested it (verification + pass criteria).}
+We run many iterations of the forced-failure transaction and verify that every iteration fails and leaves no persisted marker rows.
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, caption={Failure-simulation test run command (Module B)}]
+cd ModuleB
+python stress_tests/module_b_stress.py \
+  --base-url http://localhost:5001 \
+  --failure-iterations 1000
+\end{lstlisting}
+
+Pass criteria in \texttt{ModuleB/stress\_tests/module\_b\_results.json}:
+\begin{itemize}[noitemsep]
+  \item \texttt{failureSimulation.forced\_errors\_seen == failureSimulation.iterations},
+  \item \texttt{failureSimulation.unexpected\_successes == 0},
+  \item \texttt{failureSimulation.rolled\_back\_row\_count == 0},
+  \item \texttt{verdict.rollback\_ok == true}.
+\end{itemize}
+
+\subsubsection{Stress Testing (How we do it)}
+We run a large number of requests (hundreds or thousands) and observe behaviour under load:
+\begin{itemize}[noitemsep]
+  \item correctness: requests succeed (HTTP 200) and the earlier concurrent/race/failure checks still pass,
+  \item performance: we compute response-time percentiles (P50/P95) and average latency.
+\end{itemize}
+
+Our implementation supports two stress approaches:
+\begin{enumerate}[noitemsep]
+  \item \textbf{Built-in harness stress phase}: multi-threaded \texttt{GET} traffic to \texttt{/api/posts}, \texttt{/api/groups/}, \texttt{/api/polls/} and percentile timing summary in \texttt{module\_b\_results.json}.
+  \item \textbf{Tool-based stress (Locust)}: headless Locust run against the backend (CSV + summary).
+\end{enumerate}
+
+\textbf{How we tested it (verification + pass criteria).}
+
+Built-in harness stress phase:
+\begin{lstlisting}[basicstyle=\ttfamily\small, caption={Built-in stress test run command (Module B)}]
+cd ModuleB
+python stress_tests/module_b_stress.py \
+  --base-url http://localhost:5001 \
+  --stress-requests 2000 \
+  --stress-concurrency 64
+\end{lstlisting}
+
+Verification:
+\begin{itemize}[noitemsep]
+  \item open \texttt{module\_b\_results.json} and check \texttt{stressTest.status\_counts} contains only HTTP 200 responses,
+  \item report \texttt{stressTest.timings\_ms.p50} and \texttt{stressTest.timings\_ms.p95} as the response-time summary,
+  \item confirm \texttt{verdict.stress\_ok == true}.
+\end{itemize}
 
 Original reported outcomes (from Module B README):
 \begin{table}[H]
 \centering
 \begin{tabularx}{\textwidth}{lX}
 \hline
-\textbf{Original Test Track} & \textbf{Observed Result} \\
+\textbf{Test Area} & \textbf{Observed Result} \\
 \hline
 Concurrent Usage & PASS \\
 Race Condition Testing & PASS \\
@@ -349,7 +498,7 @@ Stress Testing & PASS \\
 Locust Run (100 users, 20s) & 2734 requests, 0 failures, avg 386 ms, P95 750 ms \\
 \hline
 \end{tabularx}
-\caption{Original Module B API-level testing summary}
+\caption{Module B API/application testing summary}
 \end{table}
 
 Measured snapshot from \texttt{module\_b\_results.json} (Assignment2 backend run):
@@ -371,118 +520,16 @@ Stress test P95 latency & 1496.53 ms \\
 \caption{Concrete values from \texttt{ModuleB/stress\_tests/module\_b\_results.json}}
 \end{table}
 
-\subsection{Path B: Engine-Level Stress over Module A (module\_b\_on\_module\_a.py)}
-A dedicated engine-level harness is implemented at:
-\begin{lstlisting}[basicstyle=\ttfamily\small]
-ModuleB/stress_tests/module_b_on_module_a.py
+\subsection{Tool-Based Stress Testing (Locust)}
+To satisfy the tool-based stress requirement, we used Locust against the same Assignment2 backend.
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, caption={Locust command used for Module B stress testing}]
+cd ModuleB
+locust -f stress_tests/locustfile.py --host http://localhost:5001 --headless \
+  -u 100 -r 25 --run-time 20s --stop-timeout 5 --csv stress_tests/locust_module_b --only-summary
 \end{lstlisting}
 
-The harness executes:
-\begin{itemize}[noitemsep]
-  \item concurrent three-table transactions,
-  \item race-condition probes on a shared limited-stock record,
-  \item fault injection at multiple transaction points,
-  \item restart durability verification using pre/post summaries.
-\end{itemize}
-
-\begin{lstlisting}[style=python, caption={Engine-level worker loop from module\_b\_on\_module\_a.py (representative)}]
-for _ in range(tx_per_worker):
-    user_id = random.randint(1, user_count)
-    product_id = random.randint(1, product_count)
-    ok, reason = place_order_tx(
-        dbm, db_name, order_ids,
-        user_id=user_id,
-        product_id=product_id,
-        inject_failure=failure_point,
-    )
-\end{lstlisting}
-
-\subsection{Measured Invariants}
-\begin{itemize}[noitemsep]
-  \item No negative balances or stock values.
-  \item Sum(order amount) matches total balance drop.
-  \item Order count matches total stock drop.
-  \item Race transactions do not oversell stock.
-\end{itemize}
-
-\begin{lstlisting}[style=python, caption={Invariant checks from engine-level harness}]
-spent = sum(o["amount"] for o in orders)
-balance_drop = initial_balance_total - sum(u["balance"] for u in users)
-stock_drop = initial_stock_total - sum(p["stock"] for p in products)
-
-assert spent == balance_drop
-assert stock_drop == len(state["orders"])
-assert all(u["balance"] >= 0 for u in users)
-assert all(p["stock"] >= 0 for p in products)
-\end{lstlisting}
-
-\section{Large-Volume Run Results}
-Configuration used:
-\begin{itemize}[noitemsep]
-  \item workers = 24
-  \item tx-per-worker = 500
-  \item race-attempts = 2000
-  \item fail-probability = 0.25
-\end{itemize}
-
-\begin{table}[H]
-\centering
-\begin{tabularx}{\textwidth}{l>{\raggedleft\arraybackslash}X}
-\hline
-\textbf{Metric} & \textbf{Value} \\
-\hline
-Attempted transactions & 12000 \\
-Committed transactions & 3600 \\
-Rolled back transactions & 8400 \\
-Elapsed time (s) & 2.9385 \\
-Throughput (tx/s) & 4083.7 \\
-Race attempts & 2000 \\
-Race committed & 40 \\
-Race final stock & 0 \\
-\hline
-\end{tabularx}
-\caption{Module B large-volume metrics over Module A}
-\end{table}
-
-\begin{lstlisting}[basicstyle=\ttfamily\small, caption={Large-volume run command used for this report}]
-python stress_tests/module_b_on_module_a.py \
-  --workers 24 \
-  --tx-per-worker 500 \
-  --race-attempts 2000 \
-  --fail-probability 0.25
-\end{lstlisting}
-
-Rollback reason distribution:
-\begin{itemize}[noitemsep]
-  \item Injected failure after users update: 418
-  \item Injected failure after products update: 387
-  \item Injected failure after orders insert: 399
-  \item Out of stock: 7196
-\end{itemize}
-
-\begin{table}[H]
-\centering
-\begin{tabular}{ll}
-\hline
-\textbf{ACID Property} & \textbf{Status} \\
-\hline
-Atomicity & TRUE \\
-Consistency & TRUE \\
-Isolation & TRUE \\
-Durability & TRUE \\
-\hline
-\end{tabular}
-\caption{ACID summary from \texttt{module\_b\_on\_module\_a\_results.json}}
-\end{table}
-
-\begin{lstlisting}[style=python, caption={Report fragment generated by harness (JSON shape)}]
-"acid_summary": {
-  "atomicity": true,
-  "consistency": true,
-  "isolation": true,
-  "durability": true
-}
-\end{lstlisting}
+The Locust outputs include a console summary and CSV artifacts under \texttt{ModuleB/stress\_tests/} (e.g., \texttt{locust\_module\_b\_stats.csv}).
 
 % #####################################################################
 %                        INTERPRETATION
@@ -498,21 +545,18 @@ incomplete = started - committed - rolled_back
 \end{lstlisting}
 
 \subsection{Module B Interpretation}
-High rollback volume is expected in this profile due to intentional failure injection and finite stock exhaustion, not corruption. The race test shows correct isolation behavior (no oversell). The durability pass confirms committed state survives restart under heavy concurrency.
+The API-level tests demonstrate multi-user correctness: concurrent requests do not create duplicate likes/votes/joins, and deliberate SQL failures do not leave partial rows due to rollback. Locust validates robustness under sustained concurrent read-heavy load.
 
-\begin{lstlisting}[style=python, caption={Interpretation anchor: race validation condition}]
-valid = committed <= race_stock \
-  and final_stock >= 0 \
-  and (race_stock - final_stock) == committed
+\begin{lstlisting}[style=python, caption={Interpretation anchor: rollback verification in module\_b\_stress.py}]
+rollback_ok = (
+  failure_simulation["rolled_back_row_count"] == 0
+  and failure_simulation["forced_errors_seen"] == failure_simulation["iterations"]
+  and failure_simulation["unexpected_successes"] == 0
+)
 \end{lstlisting}
 
 \subsection{End-to-End Interpretation}
-Together, Module A and Module B demonstrate a robust pipeline: transactional correctness at engine level and behaviorally safe execution under concurrent, adversarial, and large-volume stress workloads.
-
-\begin{lstlisting}[basicstyle=\ttfamily\small, caption={Two complementary Module B tracks}]
-1) module_b_stress.py          -> API-level multi-user behavior (Assignment2 backend)
-2) module_b_on_module_a.py     -> engine-level stress directly over ModuleA core
-\end{lstlisting}
+Together, Module A and Module B demonstrate a robust pipeline: transactional correctness at B+Tree engine level and behaviorally safe execution under concurrent API workloads for the Assignment2 application.
 
 % #####################################################################
 %                        REPRODUCIBILITY
@@ -520,20 +564,21 @@ Together, Module A and Module B demonstrate a robust pipeline: transactional cor
 \section{Reproducibility}
 
 \begin{lstlisting}[basicstyle=\ttfamily\small]
-cd ModuleB
-python stress_tests/module_b_on_module_a.py
+cd ModuleB/Assignment2/app/backend
+python app.py
 
-# Large-volume profile used in this report
-python stress_tests/module_b_on_module_a.py \
-  --workers 24 \
-  --tx-per-worker 500 \
-  --race-attempts 2000 \
-  --fail-probability 0.25
+cd ../../../
+python ModuleB/stress_tests/module_b_stress.py --base-url http://localhost:5001
+
+cd ModuleB
+locust -f stress_tests/locustfile.py --host http://localhost:5001 --headless \
+  -u 100 -r 25 --run-time 20s --stop-timeout 5 --csv stress_tests/locust_module_b --only-summary
 \end{lstlisting}
 
 Primary output file:
 \begin{itemize}[noitemsep]
-  \item \texttt{ModuleB/stress\_tests/module\_b\_on\_module\_a\_results.json}
+  \item \texttt{ModuleB/stress\_tests/module\_b\_results.json}
+  \item Locust CSV outputs in \texttt{ModuleB/stress\_tests/} (e.g., \texttt{locust\_module\_b\_stats.csv})
 \end{itemize}
 
 % #####################################################################
@@ -552,7 +597,7 @@ Parthiv Patel & Module A: transaction workflow integration, route-level transact
 Laksh Jain & Module A: B+ tree database internals, table/database abstractions, and recovery integration \\
 Shriniket Behera & Module A: consistency constraints, isolation controls, and durability/recovery fixes \\
 Ridham Patel & Module B: stress harness orchestration, report generation pipeline, and run automation \\
-Rudra Pratap Singh & Module B: concurrent/race/failure workload implementation and large-volume execution validation \\
+Rudra Pratap Singh & Module B: concurrent usage, race probes, failure simulation verification, and stress-test execution support \\
 \hline
 \end{tabularx}
 \end{table}

@@ -4,3 +4,14 @@ __pycache__/
 *.pyd
 venv/
 .env
+*.aux
+*.fdb_latexmk
+*.fls
+assignment3_report.log
+*.out
+*.gz
+*.toc
+*.md
+.claude
+.gitignore
+.DS_Store
